@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import inspect
 from typing import Any, Dict, List, Optional
 
 import torch
@@ -176,27 +177,36 @@ def main() -> None:
 
     ds = Dataset.from_dict({"text": texts})
 
-    training_args = TrainingArguments(
-        output_dir=out_dir,
-        num_train_epochs=args.epochs,
-        learning_rate=args.lr,
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=args.grad_accum,
-        warmup_ratio=args.warmup_ratio,
-        weight_decay=args.weight_decay,
-        logging_steps=args.logging_steps,
-        save_steps=args.save_steps,
-        save_total_limit=2,
-        evaluation_strategy="no" if args.eval_steps <= 0 else "steps",
-        eval_steps=args.eval_steps if args.eval_steps > 0 else None,
-        report_to="none",
-        seed=args.seed,
-        bf16=args.bf16,
-        fp16=args.fp16,
-        optim="paged_adamw_8bit" if args.load_in_4bit else "adamw_torch",
-        lr_scheduler_type="cosine",
-        gradient_checkpointing=True,
-    )
+    ta_kwargs: Dict[str, Any] = {
+        "output_dir": out_dir,
+        "num_train_epochs": args.epochs,
+        "learning_rate": args.lr,
+        "per_device_train_batch_size": args.batch_size,
+        "gradient_accumulation_steps": args.grad_accum,
+        "warmup_ratio": args.warmup_ratio,
+        "weight_decay": args.weight_decay,
+        "logging_steps": args.logging_steps,
+        "save_steps": args.save_steps,
+        "save_total_limit": 2,
+        # Some older/newer Transformers builds differ in eval args naming.
+        "evaluation_strategy": "no" if args.eval_steps <= 0 else "steps",
+        "eval_steps": args.eval_steps if args.eval_steps > 0 else None,
+        "report_to": "none",
+        "seed": args.seed,
+        "bf16": args.bf16,
+        "fp16": args.fp16,
+        "optim": "paged_adamw_8bit" if args.load_in_4bit else "adamw_torch",
+        "lr_scheduler_type": "cosine",
+        "gradient_checkpointing": True,
+    }
+
+    allowed = set(inspect.signature(TrainingArguments.__init__).parameters.keys())
+    filtered = {k: v for k, v in ta_kwargs.items() if k in allowed and v is not None}
+    dropped = sorted(set(ta_kwargs.keys()) - set(filtered.keys()))
+    if dropped:
+        print("[dora] TrainingArguments dropped keys:", dropped)
+
+    training_args = TrainingArguments(**filtered)
 
     trainer = SFTTrainer(
         model=model,
